@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抽獎系統</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f9f9f7;color:#1a1a1a;padding:1.5rem;max-width:720px;margin:0 auto;}
+.tab-bar{display:flex;border-bottom:1px solid #e0e0e0;margin-bottom:1.5rem;}
+.tab{padding:8px 16px;font-size:14px;cursor:pointer;border:none;background:none;color:#888;border-bottom:2px solid transparent;}
+.tab.active{color:#1a1a1a;border-bottom:2px solid #1a1a1a;font-weight:500;}
+.sec{display:none;}.sec.active{display:block;}
+.card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1rem;}
+@media(max-width:480px){.metrics{grid-template-columns:repeat(2,1fr);}}
+.metric{background:#f5f5f3;border-radius:8px;padding:.75rem 1rem;}
+.metric-label{font-size:12px;color:#888;margin-bottom:4px;}
+.metric-value{font-size:22px;font-weight:500;}
+input,select{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;background:#fff;color:#1a1a1a;font-size:14px;margin-bottom:8px;font-family:inherit;}
+input:focus{outline:none;border-color:#888;}
+button{padding:8px 16px;border:1px solid #d0d0d0;border-radius:8px;background:#fff;color:#1a1a1a;font-size:14px;cursor:pointer;font-family:inherit;}
+button:hover{background:#f5f5f3;}
+button:disabled{opacity:.45;cursor:not-allowed;}
+button.primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a;}
+button.primary:hover{opacity:.85;}
+button.danger{color:#c0392b;border-color:#f5c6c6;}
+button.danger:hover{background:#fef0f0;}
+.row{display:flex;gap:8px;align-items:flex-start;}
+.row input{margin-bottom:0;}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;}
+.tag-ok{background:#eaf5e8;color:#2d7a27;}
+.tag-used{background:#f0f0f0;color:#888;}
+.tag-void{background:#fef0f0;color:#c0392b;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;padding:6px 8px;color:#888;font-weight:500;border-bottom:1px solid #eee;}
+td{padding:7px 8px;border-bottom:1px solid #eee;}
+tr:last-child td{border-bottom:none;}
+.notice{padding:10px 12px;border-radius:8px;font-size:13px;margin-top:8px;}
+.ok{background:#eaf5e8;color:#2d7a27;}
+.err{background:#fef0f0;color:#c0392b;}
+.info{background:#e8f0fb;color:#1a56a0;}
+.code-chip{font-family:monospace;font-size:12px;background:#f0f0f0;border-radius:6px;padding:2px 7px;}
+.sec-label{font-size:12px;font-weight:500;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
+.prize-bar{height:6px;border-radius:3px;background:#eee;margin-top:4px;overflow:hidden;}
+.prize-fill{height:100%;border-radius:3px;background:#1a1a1a;}
+.event-title{font-size:20px;font-weight:500;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid #eee;}
+.win-area{text-align:center;padding:2rem 1rem;}
+.win-name{font-size:28px;font-weight:500;margin-bottom:.5rem;}
+.win-sub{font-size:13px;color:#888;}
+.field-label{font-size:13px;color:#555;margin-bottom:4px;}
+.req{color:#c0392b;}
+.hint{font-size:12px;color:#aaa;margin-top:-4px;margin-bottom:8px;}
+.tbl-wrap{overflow-x:auto;}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:#555;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-overlay{text-align:center;padding:2rem;color:#888;font-size:14px;}
+</style>
+</head>
+<body>
+
+<!-- ★ 唯一需要修改的地方：把下面的網址換成你的 Apps Script 網址 -->
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbx5t4lR6NIPYhdN7aq5Y9q4ISFe_NJbAzKB6YQuT9qAMGFr1bQCxN5EBmDRoiKuRwIJ/exec';
+</script>
+
+<div class="tab-bar" id="main-tabs">
+  <button class="tab active" onclick="switchMain('participant')">參加者介面</button>
+  <button class="tab" onclick="switchMain('admin')">主辦方後台</button>
+</div>
+
+<!-- 參加者介面 -->
+<div id="sec-participant" class="sec active">
+  <div id="event-title" class="event-title">載入中…</div>
+  <div class="card">
+    <div class="field-label">姓名 <span class="req">*</span></div>
+    <input type="text" id="p-name" placeholder="請輸入您的姓名">
+    <div class="hint">請使用收取郵件或領取包裹的真實姓名</div>
+    <div class="field-label">抽獎碼 <span class="req">*</span></div>
+    <div class="row">
+      <input type="text" id="p-code" placeholder="例如：ABCD-1234"
+             style="text-transform:uppercase;letter-spacing:.05em;"
+             oninput="this.value=this.value.toUpperCase()"
+             onkeydown="if(event.key==='Enter')doLottery()">
+      <button class="primary" id="btn-draw" onclick="doLottery()" style="white-space:nowrap;min-width:72px;">抽獎</button>
+    </div>
+    <div id="p-msg"></div>
+  </div>
+  <div id="p-win"></div>
+</div>
+
+<!-- 主辦方後台 -->
+<div id="sec-admin" class="sec">
+  <div id="admin-gate">
+    <div class="card">
+      <div class="sec-label">後台密碼</div>
+      <div class="row">
+        <input type="password" id="admin-pw" placeholder="輸入後台密碼"
+               onkeydown="if(event.key==='Enter')checkAdmin()">
+        <button id="btn-login" onclick="checkAdmin()" style="white-space:nowrap;">進入</button>
+      </div>
+      <div id="pw-msg"></div>
+    </div>
+  </div>
+  <div id="admin-panel" style="display:none;">
+    <div class="tab-bar" id="admin-tabs">
+      <button class="tab active" onclick="switchAdmin('dash')">總覽</button>
+      <button class="tab" onclick="switchAdmin('codes')">抽獎碼管理</button>
+      <button class="tab" onclick="switchAdmin('inv')">庫存管理</button>
+      <button class="tab" onclick="switchAdmin('rec')">抽獎紀錄</button>
+      <button class="tab" onclick="switchAdmin('settings')">活動設定</button>
+    </div>
+
+    <div id="atab-dash" class="sec active">
+      <div class="metrics" id="metrics-area"><div class="loading-overlay" style="grid-column:1/-1;">載入中…</div></div>
+      <div class="card">
+        <div class="sec-label" style="margin-bottom:12px;">各獎品剩餘庫存</div>
+        <div id="inv-visual"></div>
+      </div>
+    </div>
+
+    <div id="atab-codes" class="sec">
+      <div class="card">
+        <div class="sec-label">產生單組抽獎碼</div>
+        <button class="primary" id="btn-gen" onclick="generateCode()">產生一組新抽獎碼</button>
+        <div id="gen-result" style="margin-top:10px;"></div>
+      </div>
+      <div class="card">
+        <div class="sec-label" style="margin-bottom:10px;">所有抽獎碼</div>
+        <div id="code-list"><div class="loading-overlay">載入中…</div></div>
+      </div>
+    </div>
+
+    <div id="atab-inv" class="sec">
+      <div class="card">
+        <div class="sec-label" style="margin-bottom:10px;">獎品設定</div>
+        <div id="inv-editor"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button onclick="addPrize()">＋ 新增獎品</button>
+          <button class="primary" id="btn-save-prizes" onclick="savePrizes()">儲存庫存設定</button>
+        </div>
+        <div id="inv-msg" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div id="atab-rec" class="sec">
+      <div class="card">
+        <div class="sec-label" style="margin-bottom:10px;">抽獎紀錄</div>
+        <div class="tbl-wrap" id="rec-table"><div class="loading-overlay">載入中…</div></div>
+      </div>
+    </div>
+
+    <div id="atab-settings" class="sec">
+      <div class="card">
+        <div class="sec-label">活動名稱</div>
+        <input type="text" id="setting-title" placeholder="例如：2025 贊助感謝抽獎活動">
+        <div class="sec-label" style="margin-top:8px;">變更後台密碼</div>
+        <input type="password" id="setting-pw" placeholder="留空則不變更">
+        <button class="primary" id="btn-save-cfg" onclick="saveConfig()">儲存設定</button>
+        <div id="cfg-msg" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- API ----------
+async function api(params) {
+  const url = API + '?' + new URLSearchParams(params).toString();
+  const res = await fetch(url);
+  return res.json();
+}
+
+// ---------- 介面切換 ----------
+function switchMain(t) {
+  ['participant','admin'].forEach(n => {
+    document.getElementById('sec-'+n).classList.toggle('active', n===t);
+  });
+  document.querySelectorAll('#main-tabs .tab').forEach((b,i) =>
+    b.classList.toggle('active', (i===0&&t==='participant')||(i===1&&t==='admin')));
+  if (t === 'participant') loadEventTitle();
+}
+
+function switchAdmin(t) {
+  const tabs = ['dash','codes','inv','rec','settings'];
+  tabs.forEach(n => document.getElementById('atab-'+n).classList.toggle('active', n===t));
+  document.querySelectorAll('#admin-tabs .tab').forEach((b,i) =>
+    b.classList.toggle('active', tabs[i]===t));
+  if (t==='dash')     loadDash();
+  if (t==='codes')    loadCodes();
+  if (t==='inv')      loadInv();
+  if (t==='rec')      loadRecords();
+  if (t==='settings') loadSettings();
+}
+
+// ---------- 參加者 ----------
+async function loadEventTitle() {
+  try {
+    const r = await api({ action: 'getConfig' });
+    document.getElementById('event-title').textContent = r.title || '抽獎活動';
+  } catch(e) {}
+}
+
+async function doLottery() {
+  const name = document.getElementById('p-name').value.trim();
+  const code = document.getElementById('p-code').value.trim().toUpperCase();
+  const msgEl = document.getElementById('p-msg');
+  const winEl = document.getElementById('p-win');
+
+  if (!name) { msgEl.innerHTML = '<div class="notice err">請填寫姓名</div>'; winEl.innerHTML=''; return; }
+  if (!code) { msgEl.innerHTML = '<div class="notice err">請輸入抽獎碼</div>'; winEl.innerHTML=''; return; }
+
+  const btn = document.getElementById('btn-draw');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>抽獎中';
+  msgEl.innerHTML = '';
+  winEl.innerHTML = '';
+
+  try {
+    const r = await api({ action: 'draw', code, name });
+    if (!r.ok) {
+      msgEl.innerHTML = `<div class="notice err">${esc(r.error)}</div>`;
+    } else {
+      const now = new Date().toLocaleString('zh-TW', {hour12:false});
+      winEl.innerHTML = `
+        <div class="card win-area">
+          <div style="font-size:13px;color:#888;margin-bottom:.5rem;">恭喜 ${esc(name)}！您抽到</div>
+          <div class="win-name">${esc(r.prize)}</div>
+          <div class="win-sub" style="margin-top:1rem;">抽獎碼：${esc(code)}</div>
+          <div class="win-sub">${now}</div>
+          <div class="notice info" style="margin-top:1rem;text-align:left;">請截圖此頁面，並出示給主辦單位以領取獎品。</div>
+        </div>`;
+      document.getElementById('p-name').value = '';
+      document.getElementById('p-code').value = '';
+    }
+  } catch(e) {
+    msgEl.innerHTML = '<div class="notice err">連線錯誤，請稍後再試</div>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '抽獎';
+}
+
+// ---------- 後台登入 ----------
+async function checkAdmin() {
+  const pw = document.getElementById('admin-pw').value;
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
+  try {
+    const r = await api({ action: 'checkPw', pw });
+    if (r.ok) {
+      document.getElementById('admin-gate').style.display = 'none';
+      document.getElementById('admin-panel').style.display = 'block';
+      loadDash();
+    } else {
+      document.getElementById('pw-msg').innerHTML = '<div class="notice err">密碼錯誤</div>';
+    }
+  } catch(e) {
+    document.getElementById('pw-msg').innerHTML = '<div class="notice err">連線錯誤，請稍後再試</div>';
+  }
+  btn.disabled = false;
+}
+
+// ---------- 總覽 ----------
+async function loadDash() {
+  try {
+    const [pc, pp] = await Promise.all([
+      api({ action: 'getCodes' }),
+      api({ action: 'getPrizes' })
+    ]);
+    const vals = Object.values(pc.codes || {});
+    const total = vals.length;
+    const active = vals.filter(c => c.status === '可用').length;
+    const used   = vals.filter(c => c.status === '已使用').length;
+    const remTotal = (pp.prizes || []).reduce((s,p) => s + p.remaining, 0);
+
+    document.getElementById('metrics-area').innerHTML = `
+      <div class="metric"><div class="metric-label">已發放抽獎碼</div><div class="metric-value">${total}</div></div>
+      <div class="metric"><div class="metric-label">可用</div><div class="metric-value">${active}</div></div>
+      <div class="metric"><div class="metric-label">已使用</div><div class="metric-value">${used}</div></div>
+      <div class="metric"><div class="metric-label">剩餘獎品</div><div class="metric-value">${remTotal}</div></div>`;
+
+    document.getElementById('inv-visual').innerHTML = (pp.prizes || []).map(p => `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+          <span>${esc(p.name)}</span>
+          <span style="color:#888;">${p.remaining} / ${p.total}</span>
+        </div>
+        <div class="prize-bar"><div class="prize-fill" style="width:${p.total>0?Math.round(p.remaining/p.total*100):0}%"></div></div>
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('metrics-area').innerHTML = '<div class="notice err" style="grid-column:1/-1;">載入失敗，請重新整理</div>';
+  }
+}
+
+// ---------- 抽獎碼管理 ----------
+async function loadCodes() {
+  document.getElementById('code-list').innerHTML = '<div class="loading-overlay">載入中…</div>';
+  try {
+    const r = await api({ action: 'getCodes' });
+    const entries = Object.entries(r.codes || {});
+    if (!entries.length) {
+      document.getElementById('code-list').innerHTML = '<div style="color:#888;font-size:13px;">尚未產生任何抽獎碼</div>';
+      return;
+    }
+    const rows = entries.map(([c,v]) => `<tr>
+      <td><span class="code-chip">${c}</span></td>
+      <td><span class="tag ${v.status==='可用'?'tag-ok':v.status==='已使用'?'tag-used':'tag-void'}">${esc(v.status)}</span></td>
+      <td>${esc(v.prize||'—')}</td>
+      <td>${esc(v.name||'—')}</td>
+      <td style="color:#888;font-size:12px;">${esc(v.usedAt||v.createdAt||'—')}</td>
+      <td>${v.status==='可用'?`<button class="danger" style="padding:3px 8px;font-size:12px;" onclick="voidCode('${c}')">作廢</button>`:'—'}</td>
+    </tr>`).join('');
+    document.getElementById('code-list').innerHTML = `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>抽獎碼</th><th>狀態</th><th>獎品</th><th>姓名</th><th>時間</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  } catch(e) {
+    document.getElementById('code-list').innerHTML = '<div class="notice err">載入失敗</div>';
+  }
+}
+
+async function generateCode() {
+  const btn = document.getElementById('btn-gen');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>產生中';
+  try {
+    const r = await api({ action: 'generateCode' });
+    if (r.ok) {
+      document.getElementById('gen-result').innerHTML =
+        `<div class="notice ok">已產生新抽獎碼：<span class="code-chip" style="font-size:14px;padding:3px 10px;">${r.code}</span></div>`;
+      loadCodes();
+    } else {
+      document.getElementById('gen-result').innerHTML = `<div class="notice err">${esc(r.error)}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('gen-result').innerHTML = '<div class="notice err">連線錯誤</div>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '產生一組新抽獎碼';
+}
+
+async function voidCode(code) {
+  if (!confirm(`確定要作廢抽獎碼 ${code}？`)) return;
+  try {
+    const r = await api({ action: 'voidCode', code });
+    if (r.ok) loadCodes();
+    else alert(r.error);
+  } catch(e) { alert('連線錯誤'); }
+}
+
+// ---------- 庫存管理 ----------
+let localPrizes = [];
+
+async function loadInv() {
+  document.getElementById('inv-editor').innerHTML = '<div class="loading-overlay">載入中…</div>';
+  try {
+    const r = await api({ action: 'getPrizes' });
+    localPrizes = r.prizes || [];
+    renderInvEditor();
+  } catch(e) {
+    document.getElementById('inv-editor').innerHTML = '<div class="notice err">載入失敗</div>';
+  }
+}
+
+function renderInvEditor() {
+  document.getElementById('inv-editor').innerHTML = localPrizes.map((p,i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <input value="${esc(p.name)}" style="flex:2;margin:0;" onchange="localPrizes[${i}].name=this.value">
+      <span style="font-size:12px;color:#888;white-space:nowrap;">剩餘</span>
+      <input type="number" value="${p.remaining}" min="0" style="width:64px;margin:0;" onchange="localPrizes[${i}].remaining=parseInt(this.value)||0">
+      <span style="font-size:12px;color:#888;white-space:nowrap;">/ 初始</span>
+      <input type="number" value="${p.total}" min="0" style="width:64px;margin:0;" onchange="localPrizes[${i}].total=parseInt(this.value)||0">
+      <button class="danger" style="padding:4px 8px;font-size:12px;" onclick="localPrizes.splice(${i},1);renderInvEditor()">移除</button>
+    </div>`).join('');
+}
+
+function addPrize() {
+  localPrizes.push({id:'p'+Date.now(), name:'新款式', total:25, remaining:25});
+  renderInvEditor();
+}
+
+async function savePrizes() {
+  const btn = document.getElementById('btn-save-prizes');
+  btn.disabled = true;
+  try {
+    const r = await api({ action: 'savePrizes', prizes: JSON.stringify(localPrizes) });
+    document.getElementById('inv-msg').innerHTML = r.ok
+      ? '<div class="notice ok">已儲存</div>'
+      : `<div class="notice err">${esc(r.error)}</div>`;
+    setTimeout(() => document.getElementById('inv-msg').innerHTML = '', 2500);
+  } catch(e) {
+    document.getElementById('inv-msg').innerHTML = '<div class="notice err">連線錯誤</div>';
+  }
+  btn.disabled = false;
+}
+
+// ---------- 抽獎紀錄 ----------
+async function loadRecords() {
+  document.getElementById('rec-table').innerHTML = '<div class="loading-overlay">載入中…</div>';
+  try {
+    const r = await api({ action: 'getRecords' });
+    if (!r.records?.length) {
+      document.getElementById('rec-table').innerHTML = '<div style="color:#888;font-size:13px;">尚無抽獎紀錄</div>';
+      return;
+    }
+    const rows = r.records.map(rec => `<tr>
+      <td style="font-size:12px;color:#888;">${esc(rec.time)}</td>
+      <td><span class="code-chip">${esc(rec.code)}</span></td>
+      <td>${esc(rec.name)}</td>
+      <td>${esc(rec.prize)}</td>
+    </tr>`).join('');
+    document.getElementById('rec-table').innerHTML = `
+      <table><thead><tr><th>時間</th><th>抽獎碼</th><th>姓名</th><th>獎品</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  } catch(e) {
+    document.getElementById('rec-table').innerHTML = '<div class="notice err">載入失敗</div>';
+  }
+}
+
+// ---------- 活動設定 ----------
+async function loadSettings() {
+  try {
+    const r = await api({ action: 'getConfig' });
+    document.getElementById('setting-title').value = r.title || '';
+    document.getElementById('setting-pw').value = '';
+  } catch(e) {}
+}
+
+async function saveConfig() {
+  const title = document.getElementById('setting-title').value.trim();
+  const pw    = document.getElementById('setting-pw').value;
+  const btn   = document.getElementById('btn-save-cfg');
+  btn.disabled = true;
+  try {
+    const r = await api({ action: 'saveConfig', title, pw });
+    document.getElementById('cfg-msg').innerHTML = r.ok
+      ? '<div class="notice ok">已儲存</div>'
+      : `<div class="notice err">${esc(r.error)}</div>`;
+    setTimeout(() => document.getElementById('cfg-msg').innerHTML = '', 2500);
+    if (r.ok) loadEventTitle();
+  } catch(e) {
+    document.getElementById('cfg-msg').innerHTML = '<div class="notice err">連線錯誤</div>';
+  }
+  btn.disabled = false;
+}
+
+// ---------- 工具 ----------
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 初始載入
+loadEventTitle();
+</script>
+</body>
+</html>
